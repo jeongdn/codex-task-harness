@@ -301,6 +301,8 @@ def main(argv=None):
                 docs.append(path)
             else:
                 others.append(path)
+        except BrokenPipeError:
+            raise
         except Exception as exc:  # 한 파일이 깨져도 나머지는 계속 본다
             print(f"\n== {path}\n  읽지 못함: {type(exc).__name__}: {exc}")
     if docs:
@@ -324,4 +326,8 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:  # | head 처럼 출력이 중간에 끊겨도 조용히 끝낸다
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)
