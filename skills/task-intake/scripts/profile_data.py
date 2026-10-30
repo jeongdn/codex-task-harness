@@ -182,13 +182,13 @@ def profile_column(values, top):
     lines = []
     present = [v for v in values if v.strip().lower() not in MISSING]
     miss = Counter(v.strip() if v.strip() else "(빈칸)" for v in values if v.strip().lower() in MISSING)
-    ws = sum(1 for v in values if v != v.strip())
+    ws = sum(1 for v in values if v != v.strip() and v.strip())  # 공백만 있는 값은 결측(빈칸)으로 센다
     uniq = Counter(values)
     head = [f"고유 {len(uniq)}"]
     if miss:
         head.append("결측 " + ", ".join(f"{k} {c}" for k, c in miss.most_common(4)))
     if ws:
-        head.append(f"앞뒤 공백 {ws}")
+        head.append(f"앞뒤에 공백이 붙은 값 {ws}(빈칸 아님, 정리 필요)")
     nums = [x for x in (_num(v.strip()) for v in present) if x is not None]
     numeric = bool(present) and len(nums) >= 0.95 * len(present)
     if numeric:
