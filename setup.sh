@@ -25,7 +25,13 @@ copy_if_absent() {
 }
 
 echo "[1/3] 작업 규칙과 기록 양식"
-copy_if_absent "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md"
+if [ -e "$TARGET_DIR/AGENTS.md" ] && ! cmp -s "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md"; then
+  cp "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/HARNESS_RULES.md"
+  echo "  주의       AGENTS.md가 이미 있어 하네스 규칙은 HARNESS_RULES.md로 저장했어요."
+  echo "             내용을 확인하고 덧붙이려면: cat HARNESS_RULES.md >> AGENTS.md"
+else
+  copy_if_absent "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md"
+fi
 for name in NOTES INTERVIEW AGREEMENT PLAN DECISIONS; do
   copy_if_absent "$HARNESS_DIR/templates/$name.md" "$TARGET_DIR/$name.md"
 done
