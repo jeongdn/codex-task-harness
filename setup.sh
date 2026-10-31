@@ -46,7 +46,8 @@ for name in NOTES INTERVIEW AGREEMENT PLAN DECISIONS; do
   copy_if_absent "$HARNESS_DIR/templates/$name.md" "$TARGET_DIR/$name.md"
 done
 
-echo "[2/3] 스킬 6개 설치"
+SKILL_COUNT="$(find "$HARNESS_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+echo "[2/3] 스킬 ${SKILL_COUNT}개 설치"
 for dest in "$CODEX_SKILLS" "$CLAUDE_SKILLS"; do
   mkdir -p "$dest"
   for skill in "$HARNESS_DIR"/skills/*/; do
