@@ -7,6 +7,7 @@
 아무것도 고치지 않는다.
 """
 import argparse
+import importlib.util
 import os
 import platform
 import shutil
@@ -120,13 +121,21 @@ def port_info(port):
             print("  그 밖에 열린 포트(환경 것일 수 있음): " + ", ".join(others[:8]))
     section(f"{port}번 응답")
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=3) as r:
+        # 프록시 환경변수가 있어도 로컬 서버에 직접 붙는다
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(f"http://127.0.0.1:{port}/", timeout=3) as r:
             body = r.read(300).decode("utf-8", "replace").replace("\n", " ")
             print(f"  HTTP {r.status} · {body[:120]}")
     except urllib.error.HTTPError as e:
-        print(f"  HTTP {e.code} (서버는 떠 있지만 / 경로가 오류. 경로를 확인)")
+        print(f"  HTTP {e.code} (서버는 떠 있음. / 경로가 없거나 서버 오류. 미리보기 경로와 서버 로그를 확인)")
+    except PermissionError:
+        print("  샌드박스가 연결을 막아 확인 못 함 (서버가 꺼졌다는 뜻은 아님). 다른 터미널 탭에서 이 스크립트를 다시 돌릴 것")
     except Exception as e:
-        print(f"  응답 없음: {e.__class__.__name__} {getattr(e, 'reason', '') or e}")
+        reason = getattr(e, "reason", None)
+        if isinstance(reason, PermissionError):
+            print("  샌드박스가 연결을 막아 확인 못 함 (서버가 꺼졌다는 뜻은 아님). 다른 터미널 탭에서 이 스크립트를 다시 돌릴 것")
+        else:
+            print(f"  응답 없음: {e.__class__.__name__} {reason or e}")
 
 
 def server_processes():
@@ -161,6 +170,8 @@ def recent_files(root, limit=8):
         if dirpath.count(os.sep) - root.count(os.sep) > 3:
             dirnames[:] = []
         for name in filenames:
+            if name.startswith("."):
+                continue
             p = os.path.join(dirpath, name)
             try:
                 items.append((os.path.getmtime(p), p))
@@ -180,9 +191,9 @@ def env_info(root):
     pip_has = []
     for mod in ("pytest", "flask", "fastapi", "uvicorn", "pandas", "streamlit"):
         try:
-            __import__(mod)
-            pip_has.append(mod)
-        except Exception:
+            if importlib.util.find_spec(mod) is not None:
+                pip_has.append(mod)
+        except (ImportError, ValueError):
             pass
     print("  설치된 주요 파이썬 패키지: " + (", ".join(pip_has) if pip_has else "없음 (표준 라이브러리만)"))
     du = shutil.disk_usage(root)

@@ -26,6 +26,7 @@ DOC_EXT = {".md", ".markdown", ".txt", ".rst"}
 SKIP_DIRS = {".git", ".harness", ".agents", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache"}
 MISSING = {"", "na", "n/a", "null", "none", "nan", "-", "?", "#n/a"}
 MAX_COLS = 40
+csv.field_size_limit(min(sys.maxsize, 2**31 - 1))  # 아주 긴 칸이 있어도 읽는다
 MAX_FILES = 200
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -35,6 +36,8 @@ RNS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 # ---------- 읽기 ----------
 def read_text(path):
     raw = open(path, "rb").read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16"), "utf-16"
     for enc in ("utf-8-sig", "cp949", "latin-1"):
         try:
             text = raw.decode(enc)
@@ -56,18 +59,19 @@ def read_table(path, ext, max_rows):
         except csv.Error:
             delim = ","
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=delim)
-    header, rows, truncated = None, [], False
+    header, rows, truncated, total = None, [], False, 0
     for row in reader:
         if header is None:
             if not any(c.strip() for c in row):
                 continue
             header = row
             continue
+        total += 1
         if len(rows) >= max_rows:
             truncated = True
-            break
+            continue  # 분석은 앞부분만, 행 수는 끝까지 센다
         rows.append(row)
-    meta = f"{enc}, 구분자 {delim!r}"
+    meta = f"{enc}, 구분자 {delim!r}" + (f", 전체 {total}행 중" if truncated else "")
     return header or [], rows, meta, truncated
 
 
@@ -125,11 +129,23 @@ def read_xlsx(path, max_rows):
 
 def read_json(path, ext, max_rows):
     text, enc = read_text(path)
+    bad = 0
     if ext == ".jsonl":
-        items = [json.loads(line) for line in text.splitlines() if line.strip()]
+        items = []
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                items.append(json.loads(line))
+            except ValueError:
+                bad += 1
     else:
         data = json.loads(text)
-        items = data if isinstance(data, list) else next((v for v in data.values() if isinstance(v, list)), [data]) if isinstance(data, dict) else [data]
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list) and v and isinstance(v[0], dict)), [data])
+        items = data if isinstance(data, list) else [data]
+    if bad:
+        enc += f", 깨진 줄 {bad}개 건너뜀"
     items = [x for x in items if isinstance(x, dict)][:max_rows]
     keys = []
     for x in items:
@@ -164,7 +180,8 @@ def _short(v, n=24):
 
 DATE_FORMATS = (
     "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
-    "%Y/%m/%d", "%Y%m%d %H%M%S", "%Y%m%d", "%Y.%m.%d", "%Y.%m.%d %H:%M:%S", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S",
+    "%Y/%m/%d", "%Y%m%d %H%M%S", "%Y%m%d", "%Y.%m.%d", "%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M", "%m/%d/%Y",
+    "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
 )
 
 
@@ -175,6 +192,11 @@ def _parse_date(v):
             return datetime.strptime(v, fmt)
         except ValueError:
             continue
+    if len(v) >= 10 and v[:4].isdigit() and v[4] == "-":
+        try:  # 2026-10-31T09:00:00+09:00 같은 ISO 형식 (시간대는 떼고 비교)
+            return datetime.fromisoformat(v.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
     return None
 
 
@@ -196,10 +218,17 @@ def profile_column(values, top):
         head.append(f"숫자 최소 {_fmt(q[0])} · 중앙 {_fmt(statistics.median(q))} · 평균 {_fmt(statistics.fmean(q))} · 최대 {_fmt(q[-1])}")
         if len(q) >= 8:
             q1, q3 = q[len(q) // 4], q[(3 * len(q)) // 4]
-            fence = q3 + 3 * max(q3 - q1, 1e-9)
+            iqr = max(q3 - q1, 1e-9)
+            fence, low_fence = q3 + 3 * iqr, q1 - 3 * iqr
             far = [x for x in q if x > fence]
+            low = [x for x in q if x < low_fence]
             if far:
                 head.append(f"큰 값 {len(far)}개(>{_fmt(fence)}, 최대 {_fmt(far[-1])})")
+            if low:
+                head.append(f"작은 값 {len(low)}개(<{_fmt(low_fence)}, 최소 {_fmt(low[0])})")
+        lead0 = sum(1 for v in present if re.fullmatch(r"0\d+", v.strip()))
+        if lead0:
+            head.append(f"앞자리가 0인 값 {lead0}개(코드일 수 있음, 숫자로 바꾸면 0이 사라짐)")
         bad = Counter(v for v in present if _num(v.strip()) is None)
         if bad:
             head.append("숫자 아님 " + ", ".join(f"{_short(k)!r} {c}" for k, c in bad.most_common(3)))

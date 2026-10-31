@@ -19,7 +19,7 @@
 -
 
 ## 테스트
-- 실행: `python -m pytest -q`
+- 실행: `python3 -m unittest discover -s tests -v`
 - 결과:
 
 ## 가정과 한계

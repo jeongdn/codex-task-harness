@@ -28,10 +28,14 @@ copy_if_absent() {
 }
 
 echo "[1/3] 작업 규칙과 기록 양식 -> $TARGET_DIR"
-if [ -e "$TARGET_DIR/AGENTS.md" ] && ! cmp -s "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md"; then
+RULES_SPLIT=0
+if [ -e "$TARGET_DIR/AGENTS.md" ] && ! cmp -s "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md" \
+   && ! grep -qF "## 승인 게이트" "$TARGET_DIR/AGENTS.md"; then
   cp "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/HARNESS_RULES.md"
+  RULES_SPLIT=1
   echo "  주의       AGENTS.md가 이미 있어 하네스 규칙은 HARNESS_RULES.md로 저장했어요."
-  echo "             내용을 확인하고 덧붙이려면: cat HARNESS_RULES.md >> AGENTS.md"
+  echo "             Codex는 AGENTS.md만 읽으니, 내용을 확인하고 이렇게 덧붙이세요:"
+  echo "             cat HARNESS_RULES.md >> AGENTS.md"
 else
   copy_if_absent "$HARNESS_DIR/AGENTS.md" "$TARGET_DIR/AGENTS.md"
 fi
@@ -39,8 +43,12 @@ fi
 if [ -e "$TARGET_DIR/CLAUDE.md" ]; then
   echo "  그대로 둠  CLAUDE.md (이미 있음)"
 else
-  printf '%s\n' "@AGENTS.md" > "$TARGET_DIR/CLAUDE.md"
-  echo "  추가       CLAUDE.md (Claude Code용, AGENTS.md를 불러옴)"
+  if [ "$RULES_SPLIT" = 1 ]; then
+    printf '%s\n' "@AGENTS.md" "@HARNESS_RULES.md" > "$TARGET_DIR/CLAUDE.md"
+  else
+    printf '%s\n' "@AGENTS.md" > "$TARGET_DIR/CLAUDE.md"
+  fi
+  echo "  추가       CLAUDE.md (Claude Code용, 규칙 파일을 불러옴)"
 fi
 for name in NOTES INTERVIEW AGREEMENT PLAN DESIGN DECISIONS; do
   copy_if_absent "$HARNESS_DIR/templates/$name.md" "$TARGET_DIR/$name.md"
@@ -79,15 +87,22 @@ else
       echo "  추적 제외  $1"
     fi
   }
-  # 하네스 사본, 설치된 스킬, 도구 설정·캐시 폴더는 내 작업물이 아니므로 git 추적에서 뺀다.
-  # (홈 폴더 자체가 작업 폴더인 환경에서 .codex 같은 설정 폴더가 커밋되지 않게 한다)
+  # 하네스 사본, 설치된 스킬, 환경 설정·비밀값(.ssh, .bash_history 등)은 내 작업물이 아니므로 git 추적에서 뺀다.
+  HOME_REAL="$(cd "$HOME" 2>/dev/null && pwd -P || echo "$HOME")"
+  ROOT_REAL="$(cd "$REPO_ROOT" && pwd -P)"
   add_exclude "$(basename "$HARNESS_DIR")/"
-  for d in .agents .claude .codex .cache .config .local .npm; do
-    case "$HOME/$d" in
-      "$REPO_ROOT"/*) add_exclude "${HOME#"$REPO_ROOT"}/$d/" ;;
-    esac
-  done
-  for junk in node_modules/ __pycache__/ .pytest_cache/; do
+  if [ "$ROOT_REAL" = "$HOME_REAL" ]; then
+    # 홈 폴더 자체가 저장소: 맨 위의 점(.) 파일·폴더는 전부 뺀다. 꼭 필요하면 git add -f
+    add_exclude "/.*"
+    add_exclude "!/.gitignore"
+  else
+    for d in .agents .claude .codex .cache .config .local .npm .ssh; do
+      case "$HOME_REAL/$d" in
+        "$ROOT_REAL"/*) add_exclude "${HOME_REAL#"$ROOT_REAL"}/$d/" ;;
+      esac
+    done
+  fi
+  for junk in .env node_modules/ __pycache__/ .pytest_cache/; do
     add_exclude "$junk"
   done
 fi
