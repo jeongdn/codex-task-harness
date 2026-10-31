@@ -42,7 +42,7 @@ else
   printf '%s\n' "@AGENTS.md" > "$TARGET_DIR/CLAUDE.md"
   echo "  추가       CLAUDE.md (Claude Code용, AGENTS.md를 불러옴)"
 fi
-for name in NOTES INTERVIEW AGREEMENT PLAN DECISIONS; do
+for name in NOTES INTERVIEW AGREEMENT PLAN DESIGN DECISIONS; do
   copy_if_absent "$HARNESS_DIR/templates/$name.md" "$TARGET_DIR/$name.md"
 done
 
